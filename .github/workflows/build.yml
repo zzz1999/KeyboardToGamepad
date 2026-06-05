@@ -1,0 +1,71 @@
+name: build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*', 'latest' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required to create a Release on tags
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Fetch interception.dll
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/get-interception.ps1
+
+      - name: Publish (self-contained single-file, win-x64)
+        shell: pwsh
+        run: >
+          dotnet publish KeyboardToGamepad.csproj -c Release -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - name: Stage release files
+        shell: pwsh
+        run: |
+          $stage = "dist/KeyboardToGamepad"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item publish/KeyboardToGamepad.exe $stage/
+          Copy-Item publish/config.json $stage/
+          Copy-Item native/interception.dll $stage/
+          if (Test-Path native/install-interception.exe) { Copy-Item native/install-interception.exe $stage/ }
+          Copy-Item README.md, LICENSE, THIRD-PARTY-NOTICES.md $stage/
+          @"
+          KeyboardToGamepad - quick start
+          ===============================
+          1) Install ViGEmBus (virtual controller driver):
+             https://github.com/nefarius/ViGEmBus/releases
+          2) Install the Interception driver (keyboard capture) in an ADMIN console:
+                install-interception.exe /install
+             then REBOOT.
+          3) Run KeyboardToGamepad.exe
+          Edit config.json to change key mappings or controllerType (xbox360 | ds4).
+          "@ | Out-File -Encoding utf8 "$stage/SETUP.txt"
+          Compress-Archive -Path "$stage/*" -DestinationPath "KeyboardToGamepad-win-x64.zip" -Force
+
+      - name: Upload build artifact (every push)
+        uses: actions/upload-artifact@v4
+        with:
+          name: KeyboardToGamepad-win-x64
+          path: KeyboardToGamepad-win-x64.zip
+
+      - name: Publish GitHub Release on tag
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: KeyboardToGamepad-win-x64.zip

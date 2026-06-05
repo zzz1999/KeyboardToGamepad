@@ -1,0 +1,18 @@
+# .NET build output
+bin/
+obj/
+publish/
+dist/
+
+# IDE
+.vs/
+.idea/
+*.user
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Native binaries - downloaded separately, NOT committed (see native/README.txt)
+native/*.dll
+native/*.exe
