@@ -9,25 +9,22 @@ namespace KeyboardToGamepad;
 /// DualSense, but a DS4 is what most games (incl. Cuphead) accept as a PlayStation pad.
 /// DS4 axes are bytes (0..255, center 128) and the dpad is a single 8-way hat.
 /// </summary>
-public sealed class DualShock4Pad : IVirtualPad
+internal sealed class DualShock4Pad : PadBase
 {
-    private readonly ViGEmClient _client;
     private readonly IDualShock4Controller _pad;
-    private readonly Stick _ls = new();
-    private readonly Stick _rs = new();
     private readonly Stick _dpad = new();
 
-    public string Kind => "DualShock 4";
+    public override string Kind => "DualShock 4";
 
     public DualShock4Pad()
     {
-        _client = new ViGEmClient();              // throws if ViGEmBus is missing
         _pad = _client.CreateDualShock4Controller();
         _pad.Connect();
     }
 
-    public void Apply(PadControl c, bool p)
+    public override void Apply(PadControl c, bool p)
     {
+        if (ApplyStick(c, p)) return;
         switch (c)
         {
             case PadControl.South: _pad.SetButtonState(DualShock4Button.Cross, p); break;
@@ -55,15 +52,6 @@ public sealed class DualShock4Pad : IVirtualPad
             case PadControl.DpadDown: _dpad.Down = p; PushDpad(); break;
             case PadControl.DpadLeft: _dpad.Left = p; PushDpad(); break;
             case PadControl.DpadRight: _dpad.Right = p; PushDpad(); break;
-
-            case PadControl.LStickUp: _ls.Up = p; PushLeft(); break;
-            case PadControl.LStickDown: _ls.Down = p; PushLeft(); break;
-            case PadControl.LStickLeft: _ls.Left = p; PushLeft(); break;
-            case PadControl.LStickRight: _ls.Right = p; PushLeft(); break;
-            case PadControl.RStickUp: _rs.Up = p; PushRight(); break;
-            case PadControl.RStickDown: _rs.Down = p; PushRight(); break;
-            case PadControl.RStickLeft: _rs.Left = p; PushRight(); break;
-            case PadControl.RStickRight: _rs.Right = p; PushRight(); break;
         }
     }
 
@@ -83,13 +71,13 @@ public sealed class DualShock4Pad : IVirtualPad
         return DualShock4DPadDirection.None;
     }
 
-    private void PushLeft()
+    protected override void PushLeft()
     {
         _pad.SetAxisValue(DualShock4Axis.LeftThumbX, AxisX(_ls.Left, _ls.Right));
         _pad.SetAxisValue(DualShock4Axis.LeftThumbY, AxisY(_ls.Up, _ls.Down));
     }
 
-    private void PushRight()
+    protected override void PushRight()
     {
         _pad.SetAxisValue(DualShock4Axis.RightThumbX, AxisX(_rs.Left, _rs.Right));
         _pad.SetAxisValue(DualShock4Axis.RightThumbY, AxisY(_rs.Up, _rs.Down));
@@ -107,7 +95,7 @@ public sealed class DualShock4Pad : IVirtualPad
         return s > 0 ? (byte)255 : s < 0 ? (byte)0 : (byte)128;
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         try { _pad.Disconnect(); } catch { /* already gone */ }
         _client.Dispose();

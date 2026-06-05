@@ -5,24 +5,21 @@ using Nefarius.ViGEm.Client.Targets.Xbox360;
 namespace KeyboardToGamepad;
 
 /// <summary>Virtual Xbox 360 controller (XInput). AutoSubmitReport is on, so every Set* pushes a frame.</summary>
-public sealed class Xbox360Pad : IVirtualPad
+internal sealed class Xbox360Pad : PadBase
 {
-    private readonly ViGEmClient _client;
     private readonly IXbox360Controller _pad;
-    private readonly Stick _ls = new();
-    private readonly Stick _rs = new();
 
-    public string Kind => "Xbox 360";
+    public override string Kind => "Xbox 360";
 
     public Xbox360Pad()
     {
-        _client = new ViGEmClient();              // throws if ViGEmBus is missing
         _pad = _client.CreateXbox360Controller();
         _pad.Connect();
     }
 
-    public void Apply(PadControl c, bool p)
+    public override void Apply(PadControl c, bool p)
     {
+        if (ApplyStick(c, p)) return;
         switch (c)
         {
             case PadControl.South: _pad.SetButtonState(Xbox360Button.A, p); break;
@@ -42,25 +39,16 @@ public sealed class Xbox360Pad : IVirtualPad
             case PadControl.Guide: _pad.SetButtonState(Xbox360Button.Guide, p); break;
             case PadControl.L2: _pad.SetSliderValue(Xbox360Slider.LeftTrigger, p ? (byte)255 : (byte)0); break;
             case PadControl.R2: _pad.SetSliderValue(Xbox360Slider.RightTrigger, p ? (byte)255 : (byte)0); break;
-
-            case PadControl.LStickUp: _ls.Up = p; PushLeft(); break;
-            case PadControl.LStickDown: _ls.Down = p; PushLeft(); break;
-            case PadControl.LStickLeft: _ls.Left = p; PushLeft(); break;
-            case PadControl.LStickRight: _ls.Right = p; PushLeft(); break;
-            case PadControl.RStickUp: _rs.Up = p; PushRight(); break;
-            case PadControl.RStickDown: _rs.Down = p; PushRight(); break;
-            case PadControl.RStickLeft: _rs.Left = p; PushRight(); break;
-            case PadControl.RStickRight: _rs.Right = p; PushRight(); break;
         }
     }
 
-    private void PushLeft()
+    protected override void PushLeft()
     {
         _pad.SetAxisValue(Xbox360Axis.LeftThumbX, Axis(_ls.Left, _ls.Right));
         _pad.SetAxisValue(Xbox360Axis.LeftThumbY, Axis(_ls.Down, _ls.Up));   // up = positive
     }
 
-    private void PushRight()
+    protected override void PushRight()
     {
         _pad.SetAxisValue(Xbox360Axis.RightThumbX, Axis(_rs.Left, _rs.Right));
         _pad.SetAxisValue(Xbox360Axis.RightThumbY, Axis(_rs.Down, _rs.Up));
@@ -72,7 +60,7 @@ public sealed class Xbox360Pad : IVirtualPad
         return s > 0 ? short.MaxValue : s < 0 ? short.MinValue : (short)0;
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         try { _pad.Disconnect(); } catch { /* already gone */ }
         _client.Dispose();

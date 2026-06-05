@@ -125,14 +125,7 @@ internal static class Program
             return 4;
         }
 
-        bool wantDashboard = config.Ui.Trim().ToLowerInvariant() == "dashboard";
-        if (wantDashboard && Console.IsOutputRedirected)
-        {
-            Console.WriteLine("[note] Output is redirected (no real console) - using plain mode.");
-            wantDashboard = false;
-        }
-
-        if (wantDashboard)
+        if (ShouldUseDashboard(config))
         {
             try
             {
@@ -153,6 +146,19 @@ internal static class Program
         pad.Dispose();
         Console.WriteLine("Stopped.");
         return 0;
+    }
+
+    // The dashboard needs a real console; fall back to plain logging if output is redirected.
+    private static bool ShouldUseDashboard(Config config)
+    {
+        if (config.Ui.Trim().ToLowerInvariant() != "dashboard")
+            return false;
+        if (Console.IsOutputRedirected)
+        {
+            Console.WriteLine("[note] Output is redirected (no real console) - using plain mode.");
+            return false;
+        }
+        return true;
     }
 
     private static void RunPlain()

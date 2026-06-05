@@ -433,23 +433,16 @@ public sealed class Dashboard
 
     private IRenderable RenderPad()
     {
-        var active = new HashSet<string>();
-        lock (_lock)
-        {
-            foreach (var kv in _pressed)
-                if (kv.Value) active.Add(kv.Key.Element);
-        }
+        var (art, own) = BuildPadCanvas();
+        return EncodePad(art, own);
+    }
 
-        string Color(string? el, string seg)
-        {
-            string g = Markup.Escape(seg);
-            if (el is null) return $"[grey]{g}[/]";                                  // silhouette outline
-            return active.Contains(el) ? $"[grey]{g}[/]" : $"[bold white]{g}[/]";    // dim on press / bright idle
-        }
-
-        // Xbox-style controller silhouette (grey outline) with the buttons scattered inside in their
-        // real positions: left stick upper-left, d-pad lower-left, face buttons upper-right,
-        // right stick lower-centre, Back/Start centre, bumpers on top.
+    // Lay out the Xbox-style silhouette (grey outline) + button glyphs onto a char grid; own[y][x]
+    // records which diagram element each cell belongs to (null = static outline) so EncodePad can
+    // colour it. Buttons sit in their real positions: left stick upper-left, d-pad lower-left, face
+    // buttons upper-right, right stick lower-centre, Back/Start centre, bumpers on top.
+    private static (char[][] art, string?[][] own) BuildPadCanvas()
+    {
         const int FW = 63, H = 15;
         var art = new char[H][];
         var own = new string?[H][];
@@ -478,6 +471,29 @@ public sealed class Dashboard
         Lab(6, 34, "( o )", "RS");
         Set(5, 26, '^', "U"); Set(6, 24, '<', "L"); Set(6, 26, '+', null); Set(6, 28, '>', "R"); Set(7, 26, 'v', "D");
         Set(3, 46, 'Y', "Y"); Set(4, 44, 'X', "X"); Set(4, 48, 'B', "B"); Set(5, 46, 'A', "A");
+
+        return (art, own);
+    }
+
+    // Render the canvas to Spectre markup: the outline stays grey, each button glyph is bright
+    // white when idle and dims to grey while its element is pressed. Contiguous cells of the same
+    // element are run-length-batched so each run becomes a single coloured span.
+    private IRenderable EncodePad(char[][] art, string?[][] own)
+    {
+        const int FW = 63, H = 15;
+        var active = new HashSet<string>();
+        lock (_lock)
+        {
+            foreach (var kv in _pressed)
+                if (kv.Value) active.Add(kv.Key.Element);
+        }
+
+        string Color(string? el, string seg)
+        {
+            string g = Markup.Escape(seg);
+            if (el is null) return $"[grey]{g}[/]";                                  // silhouette outline
+            return active.Contains(el) ? $"[grey]{g}[/]" : $"[bold white]{g}[/]";    // dim on press / bright idle
+        }
 
         var lines = new string[H];
         for (int y = 0; y < H; y++)
