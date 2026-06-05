@@ -63,6 +63,15 @@ jobs:
           name: KeyboardToGamepad-win-x64
           path: KeyboardToGamepad-win-x64.zip
 
+      - name: Point the "latest" tag at this commit
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api --method PATCH "repos/${{ github.repository }}/git/refs/tags/latest" -f sha="${{ github.sha }}" -F force=true \
+            || gh api --method POST "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/latest" -f sha="${{ github.sha }}"
+
       - name: Refresh rolling "latest" release (every push)
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
