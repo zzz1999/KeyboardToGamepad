@@ -3,12 +3,11 @@ name: build
 on:
   push:
     branches: [ main, master ]
-    tags: [ 'v*', 'latest' ]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write   # required to create a Release on tags
+  contents: write   # required to publish the rolling "latest" Release
 
 jobs:
   build:
@@ -64,8 +63,11 @@ jobs:
           name: KeyboardToGamepad-win-x64
           path: KeyboardToGamepad-win-x64.zip
 
-      - name: Publish GitHub Release on tag
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Refresh rolling "latest" release (every push)
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
+          tag_name: latest
+          name: Latest build
+          body: Automated build of the latest commit (${{ github.sha }}).
           files: KeyboardToGamepad-win-x64.zip
