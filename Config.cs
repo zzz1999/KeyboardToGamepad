@@ -64,6 +64,15 @@ public sealed class Config
         Config? cfg = JsonSerializer.Deserialize<Config>(json, ReadOptions);
         if (cfg is null)
             throw new InvalidDataException("config.json deserialized to null");
+
+        // An explicit JSON null (e.g. "mappings": null) overwrites the property defaults, so
+        // coalesce back to safe values rather than NullReferenceException-ing on .Count / .Trim().
+        cfg.Mappings ??= new();
+        cfg.Backend ??= "interception";
+        cfg.Ui ??= "dashboard";
+        cfg.ControllerType ??= "xbox360";
+        cfg.ControllerName ??= "Player 2";
+
         if (cfg.Mappings.Count == 0)
             throw new InvalidDataException("config.json has no 'mappings'");
 
@@ -75,6 +84,12 @@ public sealed class Config
     {
         string target = path ?? SourcePath
             ?? throw new InvalidOperationException("no path to save the config to");
-        File.WriteAllText(target, JsonSerializer.Serialize(this, WriteOptions));
+
+        // Write to a temp file then swap it in, so a crash / IO error mid-write can't truncate the
+        // existing config.json (Save runs on essentially every TUI edit).
+        string tmp = target + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(this, WriteOptions));
+        if (File.Exists(target)) File.Replace(tmp, target, null);
+        else File.Move(tmp, target);
     }
 }

@@ -19,7 +19,8 @@ internal static class Interception
     // Capture every keyboard event; we decide per-stroke whether to forward it.
     public const ushort FILTER_KEY_ALL = 0xFFFF;
 
-    // InterceptionKeyState bits (stroke.State).
+    // InterceptionKeyState bits (stroke.State). We only consume KEY_UP and KEY_E0; KEY_E1
+    // (the Pause/Break prefix) is listed for completeness but never checked.
     public const ushort KEY_UP = 0x01;
     public const ushort KEY_E0 = 0x02;
     public const ushort KEY_E1 = 0x04;
@@ -32,6 +33,8 @@ internal static class Interception
         public uint Information;
     }
 
+    // We only handle keyboards, but the native Stroke is a union; MouseStroke must exist so the
+    // union (and the interception_receive/_send buffers) is sized correctly. Its fields are unused.
     [StructLayout(LayoutKind.Sequential)]
     public struct MouseStroke
     {

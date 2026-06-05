@@ -3,8 +3,8 @@
   //
   // Default layout: WASD to move; home row H J K L = the four face buttons; top row
   // Y U I O = shoulders/triggers (a fighting-game / KOF-friendly 8-button layout).
-  // Edit freely, or change it live in the TUI ([Enter] rebind, [Ins] add, [Del] remove,
-  // [R] restore defaults).
+  // Edit freely, or change it live in the TUI (F1 rebind, F2 add, F3 remove, F4 restore
+  // defaults, F8 save, F9 quit).
 
   "backend": "interception",
 
@@ -12,8 +12,8 @@
   // Note: true PS5 DualSense isn't emulable; "ds4" presents a PS4 pad most games accept.
   "controllerType": "xbox360",
 
-  // App-only label shown in the TUI. The OS device name ("Xbox 360 Controller for Windows"
-  // / "Wireless Controller") is set by the driver and CANNOT be changed.
+  // App-only label shown in the TUI. The OS device name (xbox360 -> "Xbox 360 Controller for
+  // Windows", ds4 -> "Wireless Controller") is set by the driver and CANNOT be changed.
   "controllerName": "Player 2 (KeyboardToGamepad)",
 
   // "dashboard" (live Spectre.Console panel + gamepad monitor) or "plain" (just logs).

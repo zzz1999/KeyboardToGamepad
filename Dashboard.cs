@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Spectre.Console;
 using Spectre.Console.Rendering;
-using Panel = Spectre.Console.Panel;   // disambiguate from System.Windows.Forms.Panel
+using Panel = Spectre.Console.Panel;   // disambiguate from System.Windows.Forms.Panel (in scope project-wide via <UseWindowsForms> + ImplicitUsings)
 
 namespace KeyboardToGamepad;
 
@@ -37,6 +37,9 @@ public sealed class Dashboard
     private string _flash = "";       // transient status line
 
     // animation state
+    private const int FrameMs = 40;             // render tick interval
+    private const long FlashBrightFrames = 24;  // ~1s: status line shown bright (aqua)
+    private const long FlashFadeFrames = 48;    // ~2s: then dimmed, then cleared
     private long _frame;                                          // one tick per render (~40ms)
     private long _flashFrame;                                     // frame when _flash was set
     private readonly Dictionary<string, long> _hitFrame = new();  // element -> frame last pressed
@@ -53,12 +56,15 @@ public sealed class Dashboard
             {
                 bool was = _pressed.TryGetValue(target, out var prev) && prev;
                 _pressed[target] = pressed;
-                if (pressed && !was) _hitFrame[target.Element] = _frame;   // only on the initial press
+                if (pressed && !was) _hitFrame[target.Element] = Interlocked.Read(ref _frame);   // only on the initial press
             }
         };
     }
 
-    private enum Pending { None, AddMapping, SetName, OpenDriver, Quit }
+    // Actions that can't run inside the AnsiConsole.Live render loop because they need a normal
+    // console (an interactive prompt, a browser launch) or end it (quit): HandleKey returns one and
+    // Run executes it after leaving Live. Inline F-keys (rebind/remove/defaults/block/save) return None.
+    private enum DeferredAction { None, AddMapping, SetName, OpenDriver, Quit }
 
     public void Run()
     {
@@ -67,15 +73,15 @@ public sealed class Dashboard
 
         while (_running)
         {
-            Pending action = Pending.None;
+            DeferredAction action = DeferredAction.None;
 
             AnsiConsole.Live(BuildView())
                 .AutoClear(false)
                 .Start(ctx =>
                 {
-                    while (_running && action == Pending.None)
+                    while (_running && action == DeferredAction.None)
                     {
-                        _frame++;   // animation tick
+                        Interlocked.Increment(ref _frame);   // animation tick
 
                         if (_captureReady)
                         {
@@ -90,26 +96,26 @@ public sealed class Dashboard
                         {
                             ConsoleKey key = Console.ReadKey(intercept: true).Key;
                             action = HandleKey(key);
-                            if (action != Pending.None) break;
+                            if (action != DeferredAction.None) break;
                         }
 
-                        Thread.Sleep(40);
+                        Thread.Sleep(FrameMs);
                     }
                 });
 
             switch (action)   // these need a normal console, so run after leaving Live
             {
-                case Pending.AddMapping: DoAddMapping(); break;
-                case Pending.SetName: DoSetName(); break;
-                case Pending.OpenDriver: OpenDriver(); break;
-                case Pending.Quit: _running = false; break;
+                case DeferredAction.AddMapping: DoAddMapping(); break;
+                case DeferredAction.SetName: DoSetName(); break;
+                case DeferredAction.OpenDriver: OpenDriver(); break;
+                case DeferredAction.Quit: _running = false; break;
             }
         }
 
         AnsiConsole.Clear();
     }
 
-    private Pending HandleKey(ConsoleKey key)
+    private DeferredAction HandleKey(ConsoleKey key)
     {
         int count = _map.Entries.Count;
 
@@ -122,7 +128,7 @@ public sealed class Dashboard
                 _captureMode = CaptureMode.None;
                 Flash("cancelled");
             }
-            return Pending.None;
+            return DeferredAction.None;
         }
 
         // Action hotkeys use F-keys so they never collide with letter / WASD mappings.
@@ -135,19 +141,19 @@ public sealed class Dashboard
                 if (count > 0) _selected = (_selected + 1) % count;
                 break;
             case ConsoleKey.F1: StartRebind(); break;
-            case ConsoleKey.F2: return Pending.AddMapping;
+            case ConsoleKey.F2: return DeferredAction.AddMapping;
             case ConsoleKey.F3: DeleteSelected(); break;
             case ConsoleKey.F4: RestoreDefaults(); break;
             case ConsoleKey.F5:
                 _engine.Block = !_engine.Block;
                 Flash($"block {(_engine.Block ? "ON" : "off")}");
                 break;
-            case ConsoleKey.F6: return Pending.SetName;
-            case ConsoleKey.F7: return Pending.OpenDriver;
+            case ConsoleKey.F6: return DeferredAction.SetName;
+            case ConsoleKey.F7: return DeferredAction.OpenDriver;
             case ConsoleKey.F8: Save(); Flash("config saved"); break;
-            case ConsoleKey.F9: return Pending.Quit;
+            case ConsoleKey.F9: return DeferredAction.Quit;
         }
-        return Pending.None;
+        return DeferredAction.None;
     }
 
     private void StartRebind()
@@ -201,20 +207,26 @@ public sealed class Dashboard
             var entries = _map.Entries;
             if (_selected < 0 || _selected >= entries.Count) return;
             string oldKey = entries[_selected].Key;
+            // If newKey is already bound to a different key's target, we're about to clobber it --
+            // capture the displaced target so the flash can say so explicitly.
+            bool clobber = _config.Mappings.TryGetValue(newKey, out var displaced)
+                           && !string.Equals(newKey, oldKey, StringComparison.OrdinalIgnoreCase);
             _config.Mappings.Remove(oldKey);
             _config.Mappings[newKey] = _pendingTarget;
             RebuildMap();
             SelectKey(newKey);
-            Flash($"{oldKey} -> {newKey}  ({_pendingTarget})");
+            Flash(clobber
+                ? $"{oldKey} -> {newKey} ({_pendingTarget})  [replaced {newKey}'s old binding: {displaced}]"
+                : $"{oldKey} -> {newKey}  ({_pendingTarget})");
         }
         else if (mode == CaptureMode.Add)
         {
-            bool existed = _config.Mappings.ContainsKey(newKey);
+            bool existed = _config.Mappings.TryGetValue(newKey, out var displaced);
             _config.Mappings[newKey] = _pendingTarget;
             RebuildMap();
             SelectKey(newKey);
             Flash(existed
-                ? $"{newKey} reassigned to {_pendingTarget}"
+                ? $"{newKey}: {displaced} -> {_pendingTarget} (replaced)"
                 : $"added {newKey} -> {_pendingTarget}");
         }
         Save();
@@ -224,6 +236,9 @@ public sealed class Dashboard
     {
         var entries = _map.Entries;
         if (_selected < 0 || _selected >= entries.Count) return;
+        // Refuse to delete the last mapping: an empty config gets auto-saved and then fails to load
+        // on the next launch. F4 restores the default layout instead.
+        if (entries.Count <= 1) { Flash("keep at least one mapping (F4 restores defaults)"); return; }
         var (key, target) = entries[_selected];
         _config.Mappings.Remove(key);
         RebuildMap();
@@ -242,9 +257,18 @@ public sealed class Dashboard
 
     private void RebuildMap()
     {
-        _map = InputMap.Build(_config.Mappings);
-        _engine.SetMap(_map);
-        lock (_lock) { _pressed.Clear(); }
+        // Release anything held under the OLD map first, so a key still down during the edit can't
+        // leave a button / stick / d-pad latched on the virtual pad.
+        _engine.ResetPad();
+        var newMap = InputMap.Build(_config.Mappings);
+        // Swap the map and clear the press state under one lock, so an in-flight OnInput can't slip
+        // a stale entry in between.
+        lock (_lock)
+        {
+            _engine.SetMap(newMap);
+            _map = newMap;
+            _pressed.Clear();
+        }
         if (_selected >= _map.Entries.Count)
             _selected = Math.Max(0, _map.Entries.Count - 1);
     }
@@ -349,9 +373,9 @@ public sealed class Dashboard
         long flashAge = _frame - _flashFrame;
         if (!string.IsNullOrEmpty(_flash))
         {
-            if (flashAge < 24) controls += $"\n[aqua]{Markup.Escape(_flash)}[/]";
-            else if (flashAge < 48) controls += $"\n[grey]{Markup.Escape(_flash)}[/]";   // fade
-            else _flash = "";                                                            // gone
+            if (flashAge < FlashBrightFrames) controls += $"\n[aqua]{Markup.Escape(_flash)}[/]";
+            else if (flashAge < FlashFadeFrames) controls += $"\n[grey]{Markup.Escape(_flash)}[/]";   // fade
+            else _flash = "";                                                                          // gone
         }
 
         // wrap all three sections in one rounded frame titled with the project name (top-left)

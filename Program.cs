@@ -179,6 +179,7 @@ internal static class Program
         }
 
         Console.WriteLine("Backend: low-level hook (WARNING: does NOT block Raw Input games like Cuphead).");
+        Console.WriteLine("(the hook backend has no dashboard TUI -- it just logs.)");
         Console.WriteLine("Running. Keep this window open. Press Ctrl+C to quit.");
 
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; Application.Exit(); };

@@ -7,6 +7,16 @@ public interface IVirtualPad : IDisposable
     string Kind { get; }
 
     void Apply(PadControl control, bool pressed);
+
+    /// <summary>
+    /// Release every input back to neutral (all buttons up, sticks / d-pad / triggers centered).
+    /// Called on a mapping swap so a key held during a rebind/delete can't leave a button stuck.
+    /// </summary>
+    void ResetAll()
+    {
+        foreach (PadControl control in Enum.GetValues<PadControl>())
+            Apply(control, false);
+    }
 }
 
 /// <summary>Factory that picks the controller type from config.</summary>

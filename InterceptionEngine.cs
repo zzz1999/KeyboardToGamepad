@@ -17,6 +17,11 @@ public sealed class InterceptionEngine : IDisposable
     private volatile bool _running;
     private Interception.Predicate? _predicate;          // kept alive so the GC can't collect it
     private volatile Action<ushort, bool>? _capture;     // one-shot "grab next key" for rebinding
+    // After a capture grabs a key-DOWN we consume it; remember it so we can also swallow the
+    // matching key-UP, otherwise that stray release leaks through and pushes a spurious frame.
+    private bool _swallowUp;
+    private ushort _swallowCode;
+    private bool _swallowExt;
 
     public InterceptionEngine(InputMap map, IVirtualPad pad, bool block)
     {
@@ -29,7 +34,11 @@ public sealed class InterceptionEngine : IDisposable
     public bool Block { get => _block; set => _block = value; }
 
     /// <summary>Raised when a mapped key changes state (target, pressed). For the UI.</summary>
-    public Action<PadTarget, bool>? OnInput { get; set; }
+    private volatile Action<PadTarget, bool>? _onInput;
+    public Action<PadTarget, bool>? OnInput { get => _onInput; set => _onInput = value; }
+
+    /// <summary>Release all virtual-pad inputs (used by the UI when the mapping changes).</summary>
+    public void ResetPad() => _pad.ResetAll();
 
     /// <summary>Swap the active mapping (after the user edits keys in the TUI).</summary>
     public void SetMap(InputMap map) => _map = map;
@@ -85,14 +94,23 @@ public sealed class InterceptionEngine : IDisposable
                 if (cap is not null && !isUp)
                 {
                     _capture = null;
+                    _swallowUp = true; _swallowCode = ks.Code; _swallowExt = extended;
                     cap(ks.Code, extended);
+                    continue;
+                }
+
+                // Swallow the matching key-up of the key we just captured, so it can't leak through
+                // as a stray release (a release with no preceding press) into the pad / UI.
+                if (_swallowUp && isUp && ks.Code == _swallowCode && extended == _swallowExt)
+                {
+                    _swallowUp = false;
                     continue;
                 }
 
                 if (_map.TryGetByScan(ks.Code, extended, out var target) && target is not null)
                 {
                     _pad.Apply(target.Control, !isUp);
-                    OnInput?.Invoke(target, !isUp);
+                    _onInput?.Invoke(target, !isUp);
                     if (_block)
                         continue; // consume: do NOT forward this key to the OS / game
                 }
@@ -106,8 +124,11 @@ public sealed class InterceptionEngine : IDisposable
     public void Dispose()
     {
         _running = false;
-        _thread?.Join(500);
-        if (_context != IntPtr.Zero)
+        // The loop only ever blocks up to 100ms (interception_wait_with_timeout), so it should exit
+        // well within this window. If it doesn't (wedged driver / saturated CPU), leak the context
+        // rather than destroy it out from under a thread still inside receive/send.
+        bool exited = _thread is null || _thread.Join(2000);
+        if (_context != IntPtr.Zero && exited)
         {
             Interception.interception_destroy_context(_context);
             _context = IntPtr.Zero;

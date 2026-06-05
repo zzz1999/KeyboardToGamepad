@@ -58,11 +58,26 @@ public sealed class InputMap
             int vk = (int)key;
             var target = ParseTarget(targetName);
 
+            // Reject two key names that resolve to the same physical key (e.g. "Enter"/"Return")
+            // instead of silently letting the second one shadow the first in the lookup.
+            if (byVk.ContainsKey(vk))
+                throw new ArgumentException(
+                    $"key '{keyName}' maps to the same physical key as another entry (vk 0x{vk:X2}); remove the duplicate");
             byVk[vk] = target;
 
             ushort scan = (ushort)MapVirtualKey((uint)vk, MAPVK_VK_TO_VSC);
             bool extended = ExtendedKeys.Contains(key);
-            byScan[ScanKey(scan, extended)] = target;
+            if (scan != 0)
+            {
+                int scanKey = ScanKey(scan, extended);
+                if (byScan.ContainsKey(scanKey))
+                    throw new ArgumentException(
+                        $"key '{keyName}' collides with another entry on scan code 0x{scan:X2}; remove the duplicate");
+                byScan[scanKey] = target;
+            }
+            // scan == 0: no hardware scan code (media / some OEM keys). It can only work via the
+            // 'hook' backend (matched by virtual-key above); under interception it would never fire,
+            // so leave it out of byScan rather than letting two such keys collide on scan 0.
 
             entries.Add((keyName, target));
         }
@@ -84,7 +99,12 @@ public sealed class InputMap
     /// <summary>Turn a captured scan code back into a Keys name (for live rebinding).</summary>
     public static string ScanToKeyName(ushort scan, bool extended)
     {
-        uint vk = MapVirtualKey(scan, MAPVK_VSC_TO_VK_EX);
+        // Extended (E0) keys -- arrows, Insert/Delete/Home/End/PageUp/Down, etc. -- share a raw
+        // scan code with their numpad twins (Up and NumPad8 are both 0x48). OR in the 0xE0 prefix
+        // so MapVirtualKey resolves the real key (0xE048 -> VK_UP, not VK_NUMPAD8); without this a
+        // rebind onto an arrow key would be saved as "NumPad8" and silently break on next launch.
+        uint code = extended ? (scan | 0xE000u) : scan;
+        uint vk = MapVirtualKey(code, MAPVK_VSC_TO_VK_EX);
         if (vk == 0) return $"Scan{scan:X2}";
         var key = (Keys)vk;
         return Enum.IsDefined(typeof(Keys), key) ? key.ToString() : $"Scan{scan:X2}";
@@ -100,6 +120,9 @@ public sealed class InputMap
         Keys.RControlKey, Keys.RMenu,
     };
 
+    // Element is the gamepad-diagram glyph id, which is NOT 1:1 with the target: Back/Start/Guide
+    // use short ids BK/ST/GD, and all four stick directions plus the L3/R3 click share one glyph
+    // per stick (LS / RS) because the diagram only draws a single stick.
     private static PadTarget ParseTarget(string raw)
     {
         switch (raw.Trim().ToLowerInvariant())
