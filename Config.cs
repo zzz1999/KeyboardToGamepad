@@ -55,6 +55,33 @@ public sealed class Config
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    private const string DefaultConfigResource = "KeyboardToGamepad.config.json";
+
+    /// <summary>
+    /// If no config file exists at <paramref name="path"/>, write the bundled default there so a
+    /// lone KeyboardToGamepad.exe is enough to start (the user can then edit the file). No-op when
+    /// the file already exists or this build has no embedded default. Best effort: a read-only
+    /// location just leaves the file absent and Load reports it.
+    /// </summary>
+    public static void EnsureFileExists(string path)
+    {
+        if (File.Exists(path)) return;
+
+        using Stream? src = typeof(Config).Assembly.GetManifestResourceStream(DefaultConfigResource);
+        if (src is null) return;
+
+        try
+        {
+            using (var reader = new StreamReader(src))
+                File.WriteAllText(path, reader.ReadToEnd());
+            Console.WriteLine($"Created a default config: {path}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[warn] Could not write a default config to '{path}': {ex.Message}");
+        }
+    }
+
     public static Config Load(string path)
     {
         if (!File.Exists(path))

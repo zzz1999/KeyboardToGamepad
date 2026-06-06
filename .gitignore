@@ -16,3 +16,7 @@ Thumbs.db
 # Native binaries - downloaded separately, NOT committed (see native/README.txt)
 native/*.dll
 native/*.exe
+
+# Local-only build helpers (offline NuGet feed used to work around a slow proxy) and logs
+localfeed/
+*.log

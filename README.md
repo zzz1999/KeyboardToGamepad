@@ -17,8 +17,10 @@ keyboard normally. It's a small, free, open-source take on what reWASD does for 
 Grab the latest **`KeyboardToGamepad-win-x64.zip`** from the
 [Releases](https://github.com/zzz1999/KeyboardToGamepad/releases) page (built automatically by
 GitHub Actions). It contains a self-contained `KeyboardToGamepad.exe` — **no .NET install
-needed**. Unzip, install the two drivers (see **Setup**), then run the exe. Prefer building from
-source? See **Setup** below.
+needed**. Unzip and run the exe: the **two required drivers are bundled inside it**, and the
+first run offers to install whichever is missing (a Windows admin prompt appears — click Yes).
+Installing the Interception driver needs **one reboot**; run the exe again afterwards. Prefer
+building from source, or want to install the drivers manually? See **Setup** below.
 
 ## Why a driver?
 

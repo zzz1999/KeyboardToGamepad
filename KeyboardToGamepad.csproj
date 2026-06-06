@@ -31,4 +31,24 @@
     </None>
   </ItemGroup>
 
+  <!-- Bundle everything the app needs INSIDE the exe so a fresh PC only needs KeyboardToGamepad.exe:
+         - the two driver installers (DriverSetup extracts + runs whichever driver is missing),
+         - interception.dll (loaded from the embedded copy via Interception.RegisterNativeLibraryResolver),
+         - a default config.json (Config.EnsureFileExists writes it beside the exe on first run).
+       All conditioned so a checkout without native\ still builds. -->
+  <ItemGroup>
+    <EmbeddedResource Include="native\ViGEmBus_x64_x86_arm64.exe" Condition="Exists('native\ViGEmBus_x64_x86_arm64.exe')">
+      <LogicalName>KeyboardToGamepad.ViGEmBus_setup.exe</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="native\install-interception.exe" Condition="Exists('native\install-interception.exe')">
+      <LogicalName>KeyboardToGamepad.install-interception.exe</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="native\interception.dll" Condition="Exists('native\interception.dll')">
+      <LogicalName>KeyboardToGamepad.interception.dll</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="config.json">
+      <LogicalName>KeyboardToGamepad.config.json</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>

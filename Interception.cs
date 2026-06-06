@@ -56,6 +56,65 @@ internal static class Interception
 
     public delegate int Predicate(int device);
 
+    private const string DllName = "interception.dll";
+    private const string DllResource = "KeyboardToGamepad.interception.dll";
+    private static int _resolverRegistered;
+
+    /// <summary>
+    /// Lets the app ship as a single exe: registers a resolver that loads interception.dll from a
+    /// copy embedded in this assembly (extracted to %TEMP% on first use) instead of requiring a
+    /// loose interception.dll next to the exe. Safe to call repeatedly. When this build has no
+    /// embedded copy, the resolver does nothing and the runtime falls back to its normal search
+    /// (a loose interception.dll beside the exe), so source/dev builds keep working.
+    /// </summary>
+    public static void RegisterNativeLibraryResolver()
+    {
+        if (Interlocked.Exchange(ref _resolverRegistered, 1) != 0) return;
+        NativeLibrary.SetDllImportResolver(typeof(Interception).Assembly, (name, _, _) =>
+        {
+            if (!name.Equals(DllName, StringComparison.OrdinalIgnoreCase))
+                return IntPtr.Zero;
+            try
+            {
+                string? path = ExtractEmbeddedDll();
+                if (path is not null && NativeLibrary.TryLoad(path, out IntPtr handle))
+                    return handle;
+            }
+            catch
+            {
+                // fall through to the runtime's default search (loose file next to the exe)
+            }
+            return IntPtr.Zero;
+        });
+    }
+
+    /// <summary>Write the embedded interception.dll to %TEMP% (once) and return its path, or null if not embedded.</summary>
+    private static string? ExtractEmbeddedDll()
+    {
+        using Stream? src = typeof(Interception).Assembly.GetManifestResourceStream(DllResource);
+        if (src is null) return null;   // not embedded in this build -> let default resolution handle it
+
+        string dir = Path.Combine(Path.GetTempPath(), "KeyboardToGamepad-setup");
+        Directory.CreateDirectory(dir);
+        string path = Path.Combine(dir, DllName);
+
+        // Reuse an already-extracted copy: a second instance can't overwrite a DLL the first one
+        // has loaded. Only (re)write when it's missing or a different size.
+        if (!File.Exists(path) || new FileInfo(path).Length != src.Length)
+        {
+            try
+            {
+                using FileStream dst = File.Create(path);
+                src.CopyTo(dst);
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                // Locked by another running instance -> the existing file is fine to load.
+            }
+        }
+        return path;
+    }
+
     [DllImport("interception.dll", CallingConvention = CallingConvention.Cdecl)]
     public static extern IntPtr interception_create_context();
 

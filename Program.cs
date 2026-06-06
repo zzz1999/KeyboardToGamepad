@@ -11,10 +11,17 @@ internal static class Program
         Console.WriteLine("KeyboardToGamepad - turn a keyboard region into a virtual controller (Player 2)");
         Console.WriteLine("--------------------------------------------------------------------");
 
+        // Allow a single self-contained exe: load interception.dll from the copy embedded in this
+        // build (falls back to a loose interception.dll next to the exe when not embedded).
+        Interception.RegisterNativeLibraryResolver();
+
         // 1) Load the JSON config (path can be overridden as the first CLI arg).
         string configPath = args.Length > 0
             ? args[0]
             : Path.Combine(AppContext.BaseDirectory, "config.json");
+
+        // Seed a default config next to the exe on first run, so a lone exe just works.
+        Config.EnsureFileExists(configPath);
 
         Config config;
         try
@@ -41,6 +48,12 @@ internal static class Program
         }
 
         PrintOccupiedKeys(config.Mappings);
+
+        // 2.5) Make sure the required drivers are present; offer to install any missing one from the
+        //      installers embedded in this exe. Returns false when we must stop (e.g. Interception was
+        //      just installed and needs a reboot before it can capture keys).
+        if (!DriverSetup.EnsureDrivers(config))
+            return 0;
 
         // 3) Create the chosen virtual controller (requires the ViGEmBus driver).
         IVirtualPad pad;
